@@ -1,4 +1,4 @@
-from utils import *
+from renderer import *
 import pygame as pg
 
 
@@ -23,6 +23,14 @@ class Settings:
         self.scroll_sensitivity: float = scroll_sensitivity
         self.zoom_sensitivity: float = zoom_sensitivity
         return
+
+
+def generate_world():
+    world = World()
+    c0 = world.create_chunk_at(Point3D(0, 0, 0))
+    c0.voxels[Point3D(8, 8, 8)] = Voxel(Color(255, 255, 255))
+    world.load_chunk(c0)
+    return world
 
 
 def motion(config: Settings, camera: Camera, dt: float):
@@ -86,10 +94,9 @@ def motion(config: Settings, camera: Camera, dt: float):
     return False
 
 
-
 def main_loop(config: Settings, screen: Screen):
-    camera = screen.get_camera(config)
-    world = World()
+    world = generate_world()
+    camera = screen.get_camera(config, world)
 
     dt = 1 / config.fps
     clock = pg.time.Clock()
@@ -97,7 +104,7 @@ def main_loop(config: Settings, screen: Screen):
         if motion(config, camera, dt):
             break
 
-        camera.draw_frame(world)
+        camera.draw_frame()
 
         screen.update()
         dt = clock.tick(config.fps) / 1000
@@ -109,10 +116,10 @@ def main():
     screen_width_pix = 100  # in pixels
     screen_height_pix = 100  # in pixels
     pixel_size = 8
-    fps = 5
+    fps = 10
     fov = math.pi / 2
     pixels_per_unit = 555
-    start_camera_pos = Point3D(0, 0, -5)
+    start_camera_pos = Point3D(0, 0, 0)
     start_camera_dir = Vector(0, 0, 1)
     start_camera_up_dir = Vector(0, 1, 0)
     mouse_sensitivity = 2

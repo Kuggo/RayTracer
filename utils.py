@@ -1,13 +1,8 @@
 import math
-from typing import Optional
-
-import pygame as pg
 
 
 fp_tolerance = 1e-6
 rgb_bound = 255
-meter_size = 1
-chunk_size = 16
 
 
 # auxiliary functions
@@ -85,54 +80,6 @@ class Color:
         return f"#{int(self.r):0{2}X}{int(self.g):0{2}X}{int(self.b):0{2}X}"
 
 
-class Pixel:
-    def __init__(self, x: int | float, y: int | float, color: 'Color' = Color(255, 255, 255)):
-        self.x: int = round(x)
-        self.y: int = round(y)
-        self.color: Color = color
-        return
-
-    def __eq__(self, other: 'Pixel'):
-        return self.x == other.x and self.y == other.y
-
-    def __ne__(self, other: 'Pixel'):
-        return not self == other
-
-    def __lt__(self, other: 'Pixel'):
-        return self.y < other.y or (self.y == other.y and self.x < other.x)
-
-    def __le__(self, other: 'Pixel'):
-        return self < other or self == other
-
-    def __gt__(self, other: 'Pixel'):
-        return not self <= other
-
-    def __ge__(self, other: 'Pixel'):
-        return not self < other
-
-    def __hash__(self):
-        return hash((self.x, self.y))
-
-    def __repr__(self):
-        return f"({self.x}, {self.y})"
-
-    @staticmethod
-    def from_tuple(t: tuple[int | float, ...]):
-        if len(t) == 2:
-            return Pixel(t[0], t[1], color=Color(255, 255, 255))
-        elif len(t) >= 3:
-            return Vector(t[0], t[1], t[2])
-        else:
-            assert False
-
-    def distance(self, other: 'Pixel') -> int | float:
-        return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
-
-    def manhattan_distance(self, other: 'Pixel') -> int | float:
-        return abs(self.x - other.x) + abs(self.y - other.y)
-
-
-
 # 3D space
 
 class Vector:
@@ -166,8 +113,17 @@ class Vector:
     def __mul__(self, other: int|float):
         return Vector(self.x * other, self.y * other, self.z * other)
 
+    def __floordiv__(self, other):
+        return Vector(self.x // other, self.y // other, self.z // other)
+
+    def __mod__(self, other):
+        return Vector(self.x % other, self.y % other, self.z % other)
+
     def __round__(self, n=None):
         return Vector(round(self.x, n), round(self.y, n), round(self.z, n))
+
+    def __floor__(self):
+        return Vector(math.floor(self.x), math.floor(self.y), math.floor(self.z))
 
     def fp_equals(self, other: 'Vector'):
         return abs(self.x - other.x) < fp_tolerance and abs(self.y - other.y) < fp_tolerance and \
@@ -179,21 +135,21 @@ class Vector:
     def manhattan_distance(self, other: 'Vector') -> int | float:
         return abs(self.x - other.x) + abs(self.y - other.y) + abs(self.z - other.z)
 
-    def rotate_pitch(self, pitch: float) -> 'Vector':
+    def rotate_yz(self, pitch: float) -> 'Vector':
         cos_pitch = math.cos(pitch)
         sin_pitch = math.sin(pitch)
         y = self.y * cos_pitch - self.z * sin_pitch
         z = self.y * sin_pitch + self.z * cos_pitch
         return Vector(self.x, y, z)
 
-    def rotate_yaw(self, yaw: float) -> 'Vector':
+    def rotate_xz(self, yaw: float) -> 'Vector':
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
         x = self.x * cos_yaw - self.z * sin_yaw
         z = self.x * sin_yaw + self.z * cos_yaw
         return Vector(x, self.y, z)
 
-    def rotate_roll(self, roll: float) -> 'Vector':
+    def rotate_xy(self, roll: float) -> 'Vector':
         cos_roll = math.cos(roll)
         sin_roll = math.sin(roll)
         x = self.x * cos_roll - self.y * sin_roll
@@ -202,17 +158,16 @@ class Vector:
 
     def get_polar(self) -> tuple[int|float, int|float]:
         """Returns the polar coordinates of the vector, pitch and yaw"""
-        m = self.magnitude()
-        if m == 0:
-            return 0, 0
         pitch = math.asin(self.y / self.magnitude())
         yaw = math.atan2(self.x, self.z)
         return pitch, yaw
 
     def rotate_to_plane(self, point: 'Vector') -> 'Vector':
         """Returns the vector projected on the other vector"""
+        if self.x == self.y == self.z == 0:
+            return Vector(0, 0, 0)
         pitch, yaw = self.get_polar()
-        return point.rotate_pitch(-pitch).rotate_yaw(-yaw)
+        return point.rotate_yz(-pitch).rotate_xz(-yaw)
 
     def dot(self, other: 'Vector') -> int | float:
         return self.x * other.x + self.y * other.y + self.z * other.z
@@ -233,6 +188,19 @@ class Vector:
 
     def angle(self, other: 'Vector') -> int|float:
         return math.acos(self.dot(other) / (self.magnitude() * other.magnitude()))
+
+    def project_onto(self, other: 'Vector') -> 'Vector':
+        return other * self.dot(other)
+
+    def get_orthogonal(self) -> 'Vector':
+        return self - self.project_onto(self)
+
+    def rotate_around(self, axis: 'Vector', angle: float) -> 'Vector':
+        paralel_v = self.project_onto(axis)
+        perpendicular_v = self - paralel_v
+        sin = math.sin(angle)
+        cos = math.cos(angle)
+        return perpendicular_v * cos + (axis.cross(perpendicular_v)) * sin + paralel_v
 
 
 Point3D = Vector
