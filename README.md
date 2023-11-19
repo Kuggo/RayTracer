@@ -1,2 +1,2 @@
 # RayTracer
-Developing a fast raytracer in one of the slowest langs? Im gonna use custom algorithms to see how far i get
+Developing a fast raytracer without any GPU work? Lets try to use custom algorithms and see how far i get while maintaining decent performance

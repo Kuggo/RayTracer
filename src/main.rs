@@ -1,49 +1,24 @@
 
 use std::ops::Index;
-use std::time::SystemTime;
 
-use sdl2::keyboard::Scancode;
-use sdl2::{rect::Rect, keyboard::Keycode};
+use std::time::Instant;
+
+use sdl2::{keyboard::Scancode};
 use sdl2::event::Event;
 
+pub mod linalg;
+pub use linalg::{Vec3};
 pub mod voxels;
-pub use voxels::{Vec3, Color};
-
+pub use voxels::{Color};
+pub mod camera;
+pub use camera::{Camera, Screen};
 
 
 // Aliases
 type Canvas = sdl2::render::Canvas<sdl2::video::Window>;
 
-
-
-// Data clumps
-struct Settings {
-    screen_width_pix: u32,
-    screen_height_pix: u32,
-    pixels_per_unit: u32,
-    pixel_size: u8,
-    fps: f32,
-
-    camera_pos: Vec3,
-    camera_dir: Vec3,
-    camera_up: Vec3,
-    fov: f32,
-
-    mouse_sensitivity: f32,
-    scroll_sensitivity: f32,
-    zoom_sensitivity: f32,
-    
-}
-
-
-struct Context {
-    cfg: Settings,
-    sdl_ctx: sdl2::Sdl,
-    canvas: Canvas,
-    keys: [bool; 256],
-    //world: voxels::World,
-}
-impl Index<Key> for [bool; 256] {
+type Keys = [bool; 256];
+impl Index<Key> for Keys {
     type Output = bool;
 
     fn index(&self, key: Key) -> &Self::Output {
@@ -52,6 +27,15 @@ impl Index<Key> for [bool; 256] {
         }
     }
 }
+
+
+// Data clumps
+struct Settings {
+    mouse_sensitivity: f32,
+    scroll_sensitivity: f32,
+    zoom_sensitivity: f32,
+}
+
 
 
 enum Key {
@@ -69,11 +53,10 @@ enum Key {
     Shift,
     Ctrl,
     Esc,
-    /*MouseLeft,
+    
+    MouseLeft,
     MouseRight,
     MouseMiddle,
-    MouseScrollUp,
-    MouseScrollDown,*/
 }
 
 impl Key {
@@ -87,6 +70,15 @@ impl Key {
             Scancode::LShift => Some(Key::Shift),
             Scancode::LCtrl => Some(Key::Ctrl),
             Scancode::Escape => Some(Key::Esc),
+            _ => None,
+        }
+    }
+
+    fn from_mouse(mouse_btn: sdl2::mouse::MouseButton) -> Option<Key> {
+        match mouse_btn {
+            sdl2::mouse::MouseButton::Left => Some(Key::MouseLeft),
+            sdl2::mouse::MouseButton::Right => Some(Key::MouseRight),
+            sdl2::mouse::MouseButton::Middle => Some(Key::MouseMiddle),
             _ => None,
         }
     }
@@ -111,26 +103,13 @@ fn generate_world() -> voxels::World {
 fn tick() {
 
 }
-
-
-fn draw_frame(ctx: &mut Context) {
-    let clear_color = Color::RGB(0, 0, 0);
-
-    ctx.canvas.set_draw_color(clear_color);
-    ctx.canvas.clear();
-
-    ctx.canvas.present();
-}
  
 
-fn user_inputs(ctx: &mut Context) -> bool {
-    let center: (i32, i32) = ((ctx.cfg.screen_width_pix/2).try_into().unwrap(), (ctx.cfg.screen_height_pix/2).try_into().unwrap());
-    let mut pitch = 0.0;
-    let mut yaw = 0.0;
-    let mut roll = 0.0;
-
+fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key_states: &mut Keys) -> bool {
+    let center_x = camera.screen.width_pix as i32 / 2;
+    let center_y = camera.screen.height_pix as i32 / 2;
     
-    let mut events = ctx.sdl_ctx.event_pump().unwrap();
+    let mut events = sdl_ctx.event_pump().unwrap();
     for event in events.poll_iter() {
         match event {
             Event::Quit {..} => {
@@ -147,7 +126,7 @@ fn user_inputs(ctx: &mut Context) -> bool {
                     _ => {},
                 }
 
-                ctx.keys[key as usize] = true;
+                key_states[key as usize] = true;
             },
 
             Event::KeyUp { scancode, .. } => {
@@ -156,95 +135,119 @@ fn user_inputs(ctx: &mut Context) -> bool {
                     None => continue,
                 };
                 
-                ctx.keys[key as usize] = false;
+                key_states[key as usize] = false;
             },
 
             Event::MouseMotion { xrel, yrel, .. } => {
-                yaw += (xrel as f32 / ctx.cfg.pixels_per_unit as f32) * ctx.cfg.mouse_sensitivity;
-                pitch += (-yrel as f32 / ctx.cfg.pixels_per_unit as f32) * ctx.cfg.mouse_sensitivity;
+                let yaw = xrel as f32 * cfg.mouse_sensitivity;
+                camera.rotate_yaw(yaw);
                 
+                let pitch = -yrel as f32 * cfg.mouse_sensitivity;
+                camera.rotate_pitch(pitch);
+
                 // setting the mouse to the center
-                ctx.sdl_ctx.mouse().warp_mouse_in_window(ctx.canvas.window(), center.0, center.1);
+                sdl_ctx.mouse().warp_mouse_in_window(camera.get_window(), center_x, center_y);
+            },
+
+            Event::MouseWheel { y, .. } => {
+                if key_states[Key::Ctrl] {
+                    let zoom = (y as f32) * cfg.zoom_sensitivity;
+                    camera.zoom(zoom);
+                } 
+                else {
+                    let roll = (y as f32) * cfg.scroll_sensitivity;
+                    camera.rotate_roll(roll);
+                }
+            },
+
+            Event::MouseButtonDown {mouse_btn, .. } => {
+                //clicks tells you how many clicks it was. Ex: 1 for single click, 2 for double click, etc.
+                if let Some(key) = Key::from_mouse(mouse_btn) {
+                    key_states[key as usize] = true;
+                }
+                // atm nothing is done to know the position of where mouse was clicked, because its always in the center
+            },
+
+            Event::MouseButtonUp {mouse_btn, .. } => {
+                if let Some(key) = Key::from_mouse(mouse_btn) {
+                    key_states[key as usize] = false;
+                }
             },
 
             _ => {}
         }
     }
+    
+    let mov_x = key_states[Key::D] as i32 as f32 - key_states[Key::A] as i32 as f32;
+    let mov_y = key_states[Key::Space] as i32 as f32 - key_states[Key::Shift] as i32 as f32;
+    let mov_z = key_states[Key::S] as i32 as f32 - key_states[Key::W] as i32 as f32;
+    let mov = Vec3::new(mov_x, mov_y, mov_z).normalize();
+
+    camera.move_forward(mov);
+    
     false
 }
 
+fn main() -> Result<(), String> {
+    const screen_width_pix: u32 = 800;
+    const screen_height_pix: u32 = 600;
+    const pixels_per_unit: u32 = 100;
+    const pixel_size: u8 = 1;
+    let fps: f32 = 30.0;
 
-fn tick_loop(ctx: &mut Context) {
-    let target_dt = (1000.0 / ctx.cfg.fps) as i64;
-    let start_time = SystemTime::now();
-    let mut last_time = start_time.elapsed().unwrap().as_millis();
+    let camera_pos = Vec3::new(0.0, 0.0, 0.0);
+    let camera_dir = Vec3::new(0.0, 0.0, 1.0);
+    let camera_up = Vec3::new(0.0, 1.0, 0.0);
+    let fov: f32 = 90.0;
+
+    let mouse_sensitivity: f32 = 0.1;
+    let scroll_sensitivity: f32 = 0.1;
+    let zoom_sensitivity: f32 = 0.1;
+
+    let mut world = generate_world();
+    
+    let mut sdl_ctx: sdl2::Sdl = sdl2::init()?;
+    let screen = Screen::new(&mut sdl_ctx, screen_width_pix, screen_height_pix, pixel_size, "RayTracer").unwrap();
+    let mut camera = Camera::new(screen, world, camera_pos, camera_dir, camera_up, fov, pixels_per_unit);
+    
+    let mut key_states: Keys = [false; 256];
+
+    let config = Settings {
+        mouse_sensitivity,
+        scroll_sensitivity,
+        zoom_sensitivity,
+    };
+    
+    
+    let target_dt = (SEC_NANOS / fps) as u64;
+    const SEC_NANOS : f32 = 1_000_000_000.0;
+    
     let mut dt = target_dt;
     
     loop {
+        let last_time = Instant::now();
+
         // game logic
         tick();
 
         // rendering
-        draw_frame(ctx);
+        camera.draw_frame();
 
         // user input
-        let stop = user_inputs(ctx);
+        let stop = user_inputs(&mut sdl_ctx, &config, &mut camera, &mut key_states);
         if stop {break;}
 
         // timing
-        let current_time = start_time.elapsed().unwrap().as_millis();
-        dt = (current_time - last_time) as i64;
-        last_time = current_time;
+        let current_time = Instant::now();
+        dt = current_time.duration_since(last_time).as_nanos() as u64;
 
         let sleep_time = target_dt - dt;
         if sleep_time > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(sleep_time as u64));
+            spin_sleep::sleep(std::time::Duration::from_nanos(sleep_time));
         }
+        println!("FPS: {:.2}", SEC_NANOS / dt.max(target_dt) as f32);
+
     }
-}
-
-
-fn main() -> Result<(), String> {
-
-    let config: Settings = Settings {
-        screen_width_pix: 800,
-        screen_height_pix: 600,
-        pixels_per_unit: 100,
-        pixel_size: 1,
-        fps: 30.0,
-
-        camera_pos: Vec3::new(0.0, 0.0, 0.0),
-        camera_dir: Vec3::new(0.0, 0.0, 1.0),
-        camera_up: Vec3::new(0.0, 1.0, 0.0),
-        fov: 90.0,
-
-        mouse_sensitivity: 0.1,
-        scroll_sensitivity: 0.1,
-        zoom_sensitivity: 0.1,
-    };
-
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
-    let window = video_subsystem.window("RayTracer", config.screen_width_pix, config.screen_height_pix)
-        .build()
-        .unwrap();
-    
-    let canvas = window.into_canvas()
-        .build()
-        .unwrap();
-
-    let mut key_states: [bool; 256] = [false; 256];
-    
-    let mut ctx = Context {
-        cfg: config,
-        sdl_ctx: sdl_context,
-        canvas: canvas,
-        keys: key_states,
-        //world: generate_world(),
-    };
-
-    tick_loop(&mut ctx);
-
     Ok(())
 }
 
