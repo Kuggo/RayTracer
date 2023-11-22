@@ -1,11 +1,11 @@
 
 
-const fp_tolerance: f32 = 0.0001;
+const FP_TOLERANCE: f32 = 0.0001;
 
 // Directions
-pub const x_axis: Vec3 = Vec3 {x: 1.0, y: 0.0, z: 0.0};
-pub const y_axis: Vec3 = Vec3 {x: 0.0, y: 1.0, z: 0.0};
-pub const z_axis: Vec3 = Vec3 {x: 0.0, y: 0.0, z: 1.0};
+pub const X_AXIS: Vec3 = Vec3 {x: 1.0, y: 0.0, z: 0.0};
+pub const Y_AXIS: Vec3 = Vec3 {x: 0.0, y: 1.0, z: 0.0};
+pub const Z_AXIS: Vec3 = Vec3 {x: 0.0, y: 0.0, z: 1.0};
 
 
 
@@ -34,9 +34,9 @@ impl Vec3 {
     }
 
     pub fn fp_equals(&self, other: &Vec3) -> bool {
-        (self.x - other.x).abs() < fp_tolerance &&
-        (self.y - other.y).abs() < fp_tolerance &&
-        (self.z - other.z).abs() < fp_tolerance
+        (self.x - other.x).abs() < FP_TOLERANCE &&
+        (self.y - other.y).abs() < FP_TOLERANCE &&
+        (self.z - other.z).abs() < FP_TOLERANCE
 
     }
     
@@ -67,8 +67,8 @@ impl Vec3 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
-    pub fn manhattan(&self) -> f32 {
-        self.x.abs() + self.y.abs() + self.z.abs()
+    pub fn manhattan(&self, other: &Vec3) -> f32 {
+        (self.x - other.x).abs() + (self.y - other.y).abs() + (self.z - other.z).abs()
     }
     
     pub fn normalize(&self) -> Vec3 {

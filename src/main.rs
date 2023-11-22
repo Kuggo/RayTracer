@@ -3,20 +3,19 @@ use std::ops::Index;
 
 use std::time::Instant;
 
-use sdl2::{keyboard::Scancode};
+use sdl2::keyboard::Scancode;
 use sdl2::event::Event;
+use sdl2::mouse::MouseButton;
 
 pub mod linalg;
-pub use linalg::{Vec3};
+pub use linalg::Vec3;
 pub mod voxels;
-pub use voxels::{Color};
+pub use voxels::World;
 pub mod camera;
 pub use camera::{Camera, Screen};
 
 
 // Aliases
-type Canvas = sdl2::render::Canvas<sdl2::video::Window>;
-
 type Keys = [bool; 256];
 impl Index<Key> for Keys {
     type Output = bool;
@@ -76,9 +75,9 @@ impl Key {
 
     fn from_mouse(mouse_btn: sdl2::mouse::MouseButton) -> Option<Key> {
         match mouse_btn {
-            sdl2::mouse::MouseButton::Left => Some(Key::MouseLeft),
-            sdl2::mouse::MouseButton::Right => Some(Key::MouseRight),
-            sdl2::mouse::MouseButton::Middle => Some(Key::MouseMiddle),
+            MouseButton::Left => Some(Key::MouseLeft),
+            MouseButton::Right => Some(Key::MouseRight),
+            MouseButton::Middle => Some(Key::MouseMiddle),
             _ => None,
         }
     }
@@ -93,10 +92,8 @@ impl Key {
 
 // functions
 
-fn generate_world() -> voxels::World {
-    let mut world = voxels::World::new();
-
-    world
+fn generate_world() ->  Box<World> {
+    World::new()
 }
 
 
@@ -106,8 +103,7 @@ fn tick() {
  
 
 fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key_states: &mut Keys) -> bool {
-    let center_x = camera.screen.width_pix as i32 / 2;
-    let center_y = camera.screen.height_pix as i32 / 2;
+    let (center_x, center_y) = camera.screen.get_screen_center_pix();
     
     let mut events = sdl_ctx.event_pump().unwrap();
     for event in events.poll_iter() {
@@ -189,10 +185,10 @@ fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key
 }
 
 fn main() -> Result<(), String> {
-    const screen_width_pix: u32 = 800;
-    const screen_height_pix: u32 = 600;
-    const pixels_per_unit: u32 = 100;
-    const pixel_size: u8 = 1;
+    const SCREEN_WIDTH_PIX: u32 = 320;
+    const SCREEN_HEIGHT_PIX: u32 = 180;
+    const PIXELS_PER_UNIT: u32 = 100;
+    const PIXEL_SIZE: u8 = 4;
     let fps: f32 = 30.0;
 
     let camera_pos = Vec3::new(0.0, 0.0, 0.0);
@@ -204,11 +200,11 @@ fn main() -> Result<(), String> {
     let scroll_sensitivity: f32 = 0.1;
     let zoom_sensitivity: f32 = 0.1;
 
-    let mut world = generate_world();
+    let world = generate_world();
     
     let mut sdl_ctx: sdl2::Sdl = sdl2::init()?;
-    let screen = Screen::new(&mut sdl_ctx, screen_width_pix, screen_height_pix, pixel_size, "RayTracer").unwrap();
-    let mut camera = Camera::new(screen, world, camera_pos, camera_dir, camera_up, fov, pixels_per_unit);
+    let screen = Screen::new(&mut sdl_ctx, SCREEN_WIDTH_PIX, SCREEN_HEIGHT_PIX, PIXEL_SIZE, "RayTracer").unwrap();
+    let mut camera = Camera::new(screen, world, camera_pos, camera_dir, camera_up, fov, PIXELS_PER_UNIT);
     
     let mut key_states: Keys = [false; 256];
 
@@ -221,8 +217,6 @@ fn main() -> Result<(), String> {
     
     let target_dt = (SEC_NANOS / fps) as u64;
     const SEC_NANOS : f32 = 1_000_000_000.0;
-    
-    let mut dt = target_dt;
     
     loop {
         let last_time = Instant::now();
@@ -239,11 +233,10 @@ fn main() -> Result<(), String> {
 
         // timing
         let current_time = Instant::now();
-        dt = current_time.duration_since(last_time).as_nanos() as u64;
+        let dt = current_time.duration_since(last_time).as_nanos() as u64;
 
-        let sleep_time = target_dt - dt;
-        if sleep_time > 0 {
-            spin_sleep::sleep(std::time::Duration::from_nanos(sleep_time));
+        if target_dt > dt {
+            spin_sleep::sleep(std::time::Duration::from_nanos(target_dt - dt));
         }
         println!("FPS: {:.2}", SEC_NANOS / dt.max(target_dt) as f32);
 

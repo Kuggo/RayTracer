@@ -1,7 +1,7 @@
 
-pub use crate::voxels::{World, Color};
+pub use crate::voxels::{World, Color, Ray};
 use crate::linalg::*;
-use sdl2::rect::Rect;
+use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
 use sdl2::video::Window;
 
@@ -22,8 +22,9 @@ impl Screen {
             .position_centered()
             .build()
             .map_err(|e| e.to_string())?;
-        let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+        let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
         sdl_ctx.mouse().show_cursor(false);
+        canvas.set_scale(pixel_size as f32, pixel_size as f32).unwrap();
 
         Ok(Screen {
             width_pix,
@@ -37,19 +38,20 @@ impl Screen {
         self.canvas.present();
     }
 
+    pub fn get_screen_center_pix(&self) -> (i32, i32) {
+        let x = self.width_pix as i32 * self.pixel_size as i32 / 2;
+        let y = self.height_pix as i32 * self.pixel_size as i32 / 2;
+        (x, y)
+    }
+
     pub fn in_bounds(&self, x: i32, y: i32) -> bool {
         -(self.width_pix as i32) / 2 <= x && x < (self.width_pix / 2) as i32 &&
          -(self.height_pix as i32) / 2 <= y && y < (self.height_pix / 2) as i32
     }
 
     pub fn draw_pixel(&mut self, x: i32, y: i32, color: Color) {
-        let rect = Rect::new(
-            (self.width_pix / 2) as i32 + (x * self.pixel_size as i32), 
-            (self.height_pix / 2) as i32 - (y * self.pixel_size as i32), 
-            self.pixel_size as u32, 
-            self.pixel_size as u32);
-        self.canvas.set_draw_color(color);
-        self.canvas.fill_rect(rect).unwrap();
+        self.canvas.set_draw_color(color.sdl_format());
+        self.canvas.draw_point(Point::new(x, y)).unwrap();
     }
 }
 
@@ -59,7 +61,7 @@ pub struct Camera {
     pixels_per_unit: u32,
     width_units: f32,
     height_units: f32,
-    world: World,
+    world: Box<World>,
     position: Vec3,
     front_direction: Vec3,
     up_vector: Vec3,
@@ -68,7 +70,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(screen: Screen, world: World, position: Vec3, direction: Vec3, up_vector: Vec3, fov: f32, pixels_per_unit: u32) -> Self {
+    pub fn new(screen: Screen, world: Box<World>, position: Vec3, direction: Vec3, up_vector: Vec3, fov: f32, pixels_per_unit: u32) -> Self {
         let pixels_per_unit = pixels_per_unit;
         let width_units = screen.width_pix as f32 / pixels_per_unit as f32;
         let height_units = screen.height_pix as f32 / pixels_per_unit as f32;
@@ -136,22 +138,20 @@ impl Camera {
     }
 
     pub fn draw_frame(&mut self) {
-        /*let up_vec = self.up_vector.scale(self.height_units / self.screen.height_pix as f32);
+        let up_vec = self.up_vector.scale(self.height_units / self.screen.height_pix as f32);
         let right_vec = self.front_direction.cross(&self.up_vector).scale(self.width_units / self.screen.width_pix as f32);
         let front_vec = self.front_direction.scale(self.focal_length);
 
         for x in 0..self.screen.width_pix {
             for y in 0..self.screen.height_pix {
-                let x_c = x - (self.screen.width_pix / 2);
-                let y_c = (self.screen.height_pix / 2) - y;
-                let v = front_vec + right_vec * x_c as f32 + up_vec * y_c as f32;
+                let x_c = x as i32 - (self.screen.width_pix as i32 / 2);
+                let y_c = (self.screen.height_pix as i32 / 2) - y as i32;
+                let v = front_vec.add(&right_vec.scale(x_c as f32)).add(&up_vec.scale(y_c as f32));
                 let ray = Ray::new(self.position, v);
-                let color = ray.trace(&self.world);
-                self.screen.draw_pixel(x, y, color);
+                let color = ray.trace(&self.world, 0);
+                self.screen.draw_pixel(x as i32, y as i32, color);
             }
         }
-        */
-        self.screen.draw_pixel(0, 0, Color::RGB(255, 0, 0));
         self.screen.show();
     }
 }
