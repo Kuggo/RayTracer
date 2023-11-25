@@ -21,6 +21,10 @@ impl Vec3 {
     pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3 {x: x, y: y, z: z}
     }
+    
+    pub fn pos(&self) -> Pos {
+        Pos::new(self.x as i32, self.y as i32, self.z as i32)
+    }
 
     pub fn from_polar(len: f32, pitch: f32, yaw: f32) -> Vec3 {
         Vec3::new(
@@ -101,12 +105,10 @@ impl Vec3 {
     }
 
     pub fn angle(&self, other: &Vec3) -> f32 {
-        let l1 = self.normalize();
-        let l2 = other.normalize();
-        if l1.null() || l2.null() {
+        if self.null() || other.null() {
             return 0.0;
         }
-        l1.dot(&l2).acos()
+        (self.dot(&other) / (self.length() * other.length())).acos() 
     }
 
     pub fn project_onto(&self, other: &Vec3) -> Vec3 {
@@ -128,25 +130,56 @@ impl Vec3 {
         ortho.scale(angle.cos()).add(&axis.scale(angle.sin())).add(&paralel)
     }
 
+    pub fn rotate_to_plane(self, point: Vec3) -> Vec3{
+        if self.null() {
+            return Vec3::new(0.0, 0.0, 0.0);
+        }
+            
+        let (_, pitch, yaw) = self.polar();
+        point.rotate_yz(-pitch).rotate_xz(-yaw)
+    } 
+    
     pub fn rotate_yz(&self, angle: f32) -> Vec3 {
         Vec3::new(
             self.x,
             self.y * angle.cos() - self.z * angle.sin(),
-            self.y * angle.sin() + self.z * angle.cos())
+            self.y * angle.sin() + self.z * angle.cos()
+        )
     }
 
     pub fn rotate_xz(&self, angle: f32) -> Vec3 {
         Vec3::new(
             self.x * angle.cos() + self.z * angle.sin(),
             self.y,
-            -self.x * angle.sin() + self.z * angle.cos())
+            -self.x * angle.sin() + self.z * angle.cos()
+        )
     }
 
     pub fn rotate_xy(&self, angle: f32) -> Vec3 {
         Vec3::new(
             self.x * angle.cos() - self.y * angle.sin(),
             self.x * angle.sin() + self.y * angle.cos(),
-            self.z)
+            self.z
+        )
     }
 }
 
+
+#[derive(Debug, Copy, PartialEq, Clone)]
+pub struct Pos {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+impl Pos {
+    pub fn new(x: i32, y: i32, z: i32) -> Pos {
+        Pos {x: x, y: y, z: z}
+    }
+
+    pub fn vec3(&self) -> Vec3 {
+        Vec3 {x: self.x as f32, y: self.y as f32, z: self.z as f32}
+        
+    }
+
+}

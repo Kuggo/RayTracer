@@ -1,10 +1,11 @@
 
-pub use crate::voxels::{World, Color, Ray};
-use crate::linalg::*;
 use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
 use sdl2::video::Window;
+use std::f32::consts::PI;
 
+pub use crate::voxels::{World, Color, Ray};
+use crate::linalg::*;
 
 
 
@@ -44,6 +45,12 @@ impl Screen {
         (x, y)
     }
 
+    pub fn center_pix(&self, x: i32, y: i32) -> Point {
+        let x_c = x + (self.width_pix as i32 / 2);
+        let y_c = (self.height_pix as i32 / 2) - y;
+        Point::new(x_c, y_c)
+    }
+
     pub fn in_bounds(&self, x: i32, y: i32) -> bool {
         -(self.width_pix as i32) / 2 <= x && x < (self.width_pix / 2) as i32 &&
          -(self.height_pix as i32) / 2 <= y && y < (self.height_pix / 2) as i32
@@ -51,7 +58,8 @@ impl Screen {
 
     pub fn draw_pixel(&mut self, x: i32, y: i32, color: Color) {
         self.canvas.set_draw_color(color.sdl_format());
-        self.canvas.draw_point(Point::new(x, y)).unwrap();
+        let p = self.center_pix(x, y);
+        self.canvas.draw_point(p).unwrap();
     }
 }
 
@@ -63,7 +71,7 @@ pub struct Camera {
     height_units: f32,
     world: Box<World>,
     position: Vec3,
-    front_direction: Vec3,
+    lookat_direction: Vec3,
     up_vector: Vec3,
     fov: f32,
     focal_length: f32,
@@ -74,7 +82,7 @@ impl Camera {
         let pixels_per_unit = pixels_per_unit;
         let width_units = screen.width_pix as f32 / pixels_per_unit as f32;
         let height_units = screen.height_pix as f32 / pixels_per_unit as f32;
-        let front_direction = (direction.sub(&position)).normalize();
+        let front_direction = direction.normalize();
         let up_vector = up_vector.normalize();
         let mut camera = Camera {
             screen,
@@ -83,7 +91,7 @@ impl Camera {
             height_units,
             world,
             position,
-            front_direction,
+            lookat_direction: front_direction,
             up_vector,
             fov: 0.0,
             focal_length: 0.0,
@@ -98,7 +106,8 @@ impl Camera {
     }
 
     pub fn zoom(&mut self, zoom: f32) {
-        self.set_fov(self.fov + zoom);
+        let fov = (self.fov + zoom).clamp(30.0 * PI/180.0, 160.0 * PI/180.0);
+        self.set_fov(fov);
     }
 
     pub fn get_window(&self) -> &Window {
@@ -106,30 +115,37 @@ impl Camera {
     }
 
     pub fn get_direction(&self) -> Vec3 {
-        self.front_direction
+        self.lookat_direction
     }
 
     pub fn rotate_yaw(&mut self, angle: f32) {
         let yaw = angle / self.pixels_per_unit as f32;
-        self.front_direction = self.front_direction.rotate_xz(-yaw);
-        self.up_vector = self.up_vector.rotate_xz(-angle);
+        self.lookat_direction = self.lookat_direction.rotate_xz(-yaw);
+        self.up_vector = self.up_vector.rotate_xz(-yaw);
     }
 
     pub fn rotate_pitch(&mut self, angle: f32) {
         let pitch = angle / self.pixels_per_unit as f32;
-        let right_vec = self.front_direction.cross(&self.up_vector);
-        self.front_direction = self.front_direction.rotate_around(&right_vec, pitch);
+        let right_vec = self.lookat_direction.cross(&self.up_vector);
+        self.lookat_direction = self.lookat_direction.rotate_around(&right_vec, pitch);
         self.up_vector = self.up_vector.rotate_around(&right_vec, pitch);
     }
 
     pub fn rotate_roll(&mut self, angle: f32) {
-        self.up_vector = self.up_vector.rotate_around(&self.front_direction, angle);
+        self.up_vector = self.up_vector.rotate_around(&self.lookat_direction, angle);
     }
 
-    pub fn move_forward(&mut self, direction: Vec3) {
-        let mov_reference = Vec3::new(self.position.x, 0.0, self.position.z).normalize();
-        let angle = mov_reference.angle(&Vec3::new(0.0, 0.0, 1.0));
-        let mov_dir = direction.rotate_around(&Vec3::new(0.0, 1.0, 0.0), angle);
+    pub fn move_rel_to_facing(&mut self, direction: Vec3) {
+        let up_component = Vec3::new(0.0, direction.y, 0.0);
+        let hori_component = direction.sub(&up_component);
+
+        let sign = (((self.lookat_direction.x >= 0.0) as i32) * 2) - 1;
+        let reference = Vec3::new(self.lookat_direction.x, 0.0, self.lookat_direction.z);
+        let angle = sign as f32 * Z_AXIS.angle(&reference);
+
+        let hori_dir = hori_component.rotate_xz(angle);
+        let mov_dir = hori_dir.add(&up_component);
+
         self.position = self.position.add(&mov_dir);
     }
 
@@ -139,17 +155,15 @@ impl Camera {
 
     pub fn draw_frame(&mut self) {
         let up_vec = self.up_vector.scale(self.height_units / self.screen.height_pix as f32);
-        let right_vec = self.front_direction.cross(&self.up_vector).scale(self.width_units / self.screen.width_pix as f32);
-        let front_vec = self.front_direction.scale(self.focal_length);
+        let right_vec = self.lookat_direction.cross(&self.up_vector).scale(self.width_units / self.screen.width_pix as f32);
+        let front_vec = self.lookat_direction.scale(self.focal_length);
 
-        for x in 0..self.screen.width_pix {
-            for y in 0..self.screen.height_pix {
-                let x_c = x as i32 - (self.screen.width_pix as i32 / 2);
-                let y_c = (self.screen.height_pix as i32 / 2) - y as i32;
-                let v = front_vec.add(&right_vec.scale(x_c as f32)).add(&up_vec.scale(y_c as f32));
+        for x in (-(self.screen.width_pix as i32) / 2)..(self.screen.width_pix as i32 / 2) {
+            for y in (-(self.screen.height_pix as i32) / 2)..(self.screen.height_pix as i32 / 2) {
+                let v = front_vec.add(&right_vec.scale(x as f32)).add(&up_vec.scale(y as f32));
                 let ray = Ray::new(self.position, v);
                 let color = ray.trace(&self.world, 0);
-                self.screen.draw_pixel(x as i32, y as i32, color);
+                self.screen.draw_pixel(x, y, color);
             }
         }
         self.screen.show();

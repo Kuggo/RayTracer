@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 sdl2 = "*"
 spin_sleep = "1.1.1"
+rand = "0.8"
 
 [profile.dev]
 opt-level = 3

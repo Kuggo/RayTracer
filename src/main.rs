@@ -8,9 +8,9 @@ use sdl2::event::Event;
 use sdl2::mouse::MouseButton;
 
 pub mod linalg;
-pub use linalg::Vec3;
+pub use linalg::*;
 pub mod voxels;
-pub use voxels::World;
+pub use voxels::*;
 pub mod camera;
 pub use camera::{Camera, Screen};
 
@@ -33,6 +33,7 @@ struct Settings {
     mouse_sensitivity: f32,
     scroll_sensitivity: f32,
     zoom_sensitivity: f32,
+    camera_speed: f32,
 }
 
 
@@ -93,7 +94,12 @@ impl Key {
 // functions
 
 fn generate_world() ->  Box<World> {
-    World::new()
+    let mut world = World::new();
+    world.random_gen();
+    //let mut c = Chunk::new(Pos::new(0, 0, 0));
+    //c.set_voxel(Vec3::new(4.0, 4.0, 4.0), Materials::Stone as MaterialID);
+    //world.load_chunk(c);
+    world
 }
 
 
@@ -102,7 +108,7 @@ fn tick() {
 }
  
 
-fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key_states: &mut Keys) -> bool {
+fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key_states: &mut Keys, dt: f32) -> bool {
     let (center_x, center_y) = camera.screen.get_screen_center_pix();
     
     let mut events = sdl_ctx.event_pump().unwrap();
@@ -174,12 +180,12 @@ fn user_inputs(sdl_ctx: &mut sdl2::Sdl, cfg: &Settings, camera: &mut Camera, key
         }
     }
     
-    let mov_x = key_states[Key::D] as i32 as f32 - key_states[Key::A] as i32 as f32;
-    let mov_y = key_states[Key::Space] as i32 as f32 - key_states[Key::Shift] as i32 as f32;
-    let mov_z = key_states[Key::S] as i32 as f32 - key_states[Key::W] as i32 as f32;
-    let mov = Vec3::new(mov_x, mov_y, mov_z).normalize();
+    let mov_x = (key_states[Key::A] as i32 - key_states[Key::D] as i32) as f32;
+    let mov_y = (key_states[Key::Space] as i32 - key_states[Key::Shift] as i32) as f32;
+    let mov_z = (key_states[Key::W] as i32 - key_states[Key::S] as i32) as f32;
+    let mov = Vec3::new(mov_x, mov_y, mov_z).normalize().scale(dt * cfg.camera_speed);
 
-    camera.move_forward(mov);
+    camera.move_rel_to_facing(mov);
     
     false
 }
@@ -196,9 +202,10 @@ fn main() -> Result<(), String> {
     let camera_up = Vec3::new(0.0, 1.0, 0.0);
     let fov: f32 = 90.0;
 
-    let mouse_sensitivity: f32 = 0.1;
+    let mouse_sensitivity: f32 = 0.2;
     let scroll_sensitivity: f32 = 0.1;
     let zoom_sensitivity: f32 = 0.1;
+    let camera_speed: f32 = 10.0;
 
     let world = generate_world();
     
@@ -212,10 +219,12 @@ fn main() -> Result<(), String> {
         mouse_sensitivity,
         scroll_sensitivity,
         zoom_sensitivity,
+        camera_speed
     };
     
     
     let target_dt = (SEC_NANOS / fps) as u64;
+    let mut dt = target_dt;
     const SEC_NANOS : f32 = 1_000_000_000.0;
     
     loop {
@@ -228,12 +237,12 @@ fn main() -> Result<(), String> {
         camera.draw_frame();
 
         // user input
-        let stop = user_inputs(&mut sdl_ctx, &config, &mut camera, &mut key_states);
+        let stop = user_inputs(&mut sdl_ctx, &config, &mut camera, &mut key_states, dt as f32 / SEC_NANOS);
         if stop {break;}
 
         // timing
         let current_time = Instant::now();
-        let dt = current_time.duration_since(last_time).as_nanos() as u64;
+        dt = current_time.duration_since(last_time).as_nanos() as u64;
 
         if target_dt > dt {
             spin_sleep::sleep(std::time::Duration::from_nanos(target_dt - dt));

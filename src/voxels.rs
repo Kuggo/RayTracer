@@ -1,5 +1,6 @@
 
 use std::mem;
+use rand::Rng;
 
 use crate::linalg::*;
 
@@ -56,13 +57,13 @@ impl Color {
 
 
 // Materials
-type MaterialID = u8;
+pub type MaterialID = u8;
 
 static MATERIALS: [Material; 256] = Materials::init_pallete();
 
 
 #[derive(Clone, Copy)]
-struct Material {
+pub struct Material {
     color: Color,
     //reflectiveness: f32,
     //refractiviness: f32,
@@ -77,7 +78,7 @@ impl Material {
 
 
 #[derive(Clone, Copy, Debug)]
-enum Materials {
+pub enum Materials {
     Air,
     Stone,
     Dirt,
@@ -122,19 +123,30 @@ pub struct Octree {
 const CHUNK_SIZE: usize = 8;
 const RENDER_DISTANCE: usize = 8;
 
-const CHUNK_MASK: usize = (RENDER_DISTANCE << 1) - 1;
+const CHUNK_MASK: usize = RENDER_DISTANCE - 1;
 const VOXEL_MASK: usize = CHUNK_SIZE - 1;
 
 #[derive(Clone, Copy)]
 pub struct Chunk {
     //tree: Octree,
-    coords: Vec3,
+    coords: Pos,
     voxels: [MaterialID; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
 }
 
 impl Chunk {
-    pub fn new(coords: Vec3) -> Box<Chunk> {
+    pub fn new(coords: Pos) -> Box<Chunk> {
         Box::new(Chunk {coords, voxels: [0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE]})
+    }
+
+    pub fn random_gen(&mut self) {
+        let mut rng = rand::thread_rng();
+        for _ in 0..CHUNK_SIZE {
+            let x = rng.gen_range(0..CHUNK_SIZE);
+            let y = rng.gen_range(0..CHUNK_SIZE);
+            let z = rng.gen_range(0..CHUNK_SIZE);
+            let index = ((z * CHUNK_SIZE) + y) * CHUNK_SIZE + x;
+            self.voxels[index] = Materials::Stone as MaterialID;
+        }
     }
 
     fn get_voxel_index(coords: Vec3) -> usize {
@@ -168,11 +180,23 @@ impl World {
         Box::new(World {chunks: std::array::from_fn(|_| None)})
     }
 
-    fn chunk_index(coords: Vec3) -> usize {
+    pub fn random_gen(&mut self) {
+        for x in 0..RENDER_DISTANCE {
+            for y in 0..RENDER_DISTANCE {
+                for z in 0..RENDER_DISTANCE {
+                    let mut chunk = Chunk::new(Pos::new(x as i32, y as i32, z as i32));
+                    chunk.random_gen();
+                    self.load_chunk(chunk);
+                }
+            }
+        }
+    }
+
+    fn chunk_index(coords: Pos) -> usize {
         let x: usize = coords.x as usize & CHUNK_MASK;
         let y: usize = coords.y as usize & CHUNK_MASK;
         let z: usize = coords.z as usize & CHUNK_MASK;
-        let index = (((z * RENDER_DISTANCE << 1) + y) * RENDER_DISTANCE << 1) + x;
+        let index = (z * RENDER_DISTANCE + y) * RENDER_DISTANCE + x;
         index
     }
 
@@ -184,7 +208,7 @@ impl World {
         old_chunk
     }
 
-    pub fn unload_chunk(&mut self, coords: Vec3) -> Option<Box<Chunk>> {
+    pub fn unload_chunk(&mut self, coords: Pos) -> Option<Box<Chunk>> {
         let index = World::chunk_index(coords);
 
         let old = mem::replace(&mut self.chunks[index], None);
@@ -196,8 +220,8 @@ impl World {
 
 
 pub struct Ray {
-    origin: Vec3,
-    direction: Vec3,
+    pub origin: Vec3,
+    pub direction: Vec3,
 }
 
 impl Ray {
@@ -208,7 +232,7 @@ impl Ray {
     pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
         let mut pos = self.origin;
         while pos.manhattan(&self.origin) < (RENDER_DISTANCE * CHUNK_SIZE) as f32 {
-            let chunk = &world.chunks[World::chunk_index(pos)];
+            let chunk = &world.chunks[World::chunk_index(pos.pos())];
             if let Some(chunk) = chunk {
                 let material = Material::from_id(chunk.get_voxel(pos));
                 
