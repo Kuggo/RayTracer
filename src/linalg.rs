@@ -185,6 +185,18 @@ impl Pos {
         (self.x - other.x).abs() + (self.y - other.y).abs() + (self.z - other.z).abs()
     }
 
+    pub fn add(&self, other: &Pos) -> Pos {
+        Pos::new(self.x + other.x, self.y + other.y, self.z + other.z)
+    }
+
+    pub fn sub(&self, other: &Pos) -> Pos {
+        Pos::new(self.x - other.x, self.y - other.y, self.z - other.z)
+    }
+
+    pub fn add_mod(&self, other: &Pos, modulo: i32) -> Pos {
+        Pos::new((self.x + other.x) % modulo, (self.y + other.y) % modulo, (self.z + other.z) % modulo)
+    }
+
     pub fn div(&self, i: i32) -> Pos {
         Pos::new(self.x / i, self.y / i, self.z / i)
     }

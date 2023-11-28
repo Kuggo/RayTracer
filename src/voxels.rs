@@ -173,11 +173,15 @@ impl Chunk {
 
 pub struct World {
     chunks: [Option<Box<Chunk>>; RENDER_DISTANCE * RENDER_DISTANCE * RENDER_DISTANCE],
+    coord_index: Pos,
 }
 
 impl World {
     pub fn new() -> Box<World> {
-        Box::new(World {chunks: std::array::from_fn(|_| None)})
+        Box::new(World {
+            chunks: std::array::from_fn(|_| None),
+            coord_index: Pos::new(0, 0, 0),
+        })
     }
 
     pub fn random_gen(&mut self) {
@@ -198,6 +202,21 @@ impl World {
         let z: usize = coords.z as usize & CHUNK_MASK;
         let index = (z * RENDER_DISTANCE + y) * RENDER_DISTANCE + x;
         index
+    }
+
+    fn fetch_unloaded_chunk(&self, coords: Pos) -> Box<Chunk> {
+        let was_generated = false;
+
+        if was_generated {
+            // TODO load from file
+            let c = Chunk::new(coords);
+            c
+        }
+        else {
+            let mut c = Chunk::new(coords);
+            c.random_gen();
+            c
+        }
     }
 
     pub fn load_chunk(&mut self, chunk: Box<Chunk>) -> Option<Box<Chunk>> {
@@ -227,6 +246,114 @@ impl World {
             None
         }
     }
+
+    pub fn update_chunks_in_area(&mut self, pos: Vec3) {
+        const RD: i32 = RENDER_DISTANCE as i32;
+
+
+        let pos = pos.pos();
+        let index = pos.div(CHUNK_SIZE as i32);
+        if index == self.coord_index { 
+            return; // early return as no changes to loaded chunks
+        }
+        let offset = index.sub(&self.coord_index);
+
+        let mut unloaded_chunks: Vec<Box<Chunk>> = Vec::new();
+
+        if offset.x >= RD || offset.y >= RD || offset.z >= RD {
+            unloaded_chunks.append(&mut self.unload_all_chunks());
+            self.load_all_chunks(pos);
+        }
+        
+        
+        let corner = self.coord_index.sub(&Pos::new(RD/2, RD/2, RD/2));
+        
+        let range_x = if offset.x >= 0 { 0..offset.x } 
+                                else { (RD + offset.x)..RD };
+                                
+        for x in range_x {
+            for y in 0..RENDER_DISTANCE {
+                for z in 0..RENDER_DISTANCE {
+                    let coords = Pos::new(x, y as i32, z as i32).add(&corner);
+                    let new = self.fetch_unloaded_chunk(coords);
+                    let old = self.load_chunk(new);
+                    if let Some(old) = old {
+                        unloaded_chunks.push(old);
+                    }
+                }
+            }
+        }
+
+        let range_y = if offset.y >= 0 { 0..offset.y } 
+                                else { offset.y..RD };
+        for y in range_y {
+            let range_x = if offset.x >= 0 { offset.x..RD } // feels like backwards but its correct
+                                    else { 0..(RD + offset.x) };
+            
+            for x in range_x {
+                for z in 0..RENDER_DISTANCE {
+                    let coords = Pos::new(x, y, z as i32).add(&corner);
+                    let c = self.unload_chunk(coords);
+                    if let Some(c) = c {
+                        unloaded_chunks.push(c);
+                    }
+                }
+            }
+        }
+
+        let range_z = if offset.z >= 0 { 0..offset.z } 
+                                else { offset.z..RD };
+        for z in range_z {
+            let range_x = if offset.x >= 0 { offset.x..RD }
+                                    else { 0..(RD + offset.x) };
+            
+            for x in range_x {
+                let range_y = if offset.y >= 0 { offset.y..RD }
+                                        else { 0..(RD + offset.y) };
+                for y in range_y {
+                    let coords = Pos::new(x, y, z).add(&corner);
+
+                    let c = self.unload_chunk(coords);
+                    if let Some(c) = c {
+                        unloaded_chunks.push(c);
+                    }
+                }
+            }
+        }
+
+        self.coord_index = index;
+    }
+
+    fn unload_all_chunks(&mut self) -> Vec<Box<Chunk>> {
+        let mut unloaded_chunks = Vec::new();
+        for x in 0..RENDER_DISTANCE {
+            for y in 0..RENDER_DISTANCE {
+                for z in 0..RENDER_DISTANCE {
+                    let coords = Pos::new(x as i32, y as i32, z as i32);
+                    let c = self.unload_chunk(coords);
+                    if let Some(c) = c {
+                        unloaded_chunks.push(c);
+                    }
+                }
+            }
+        }
+        unloaded_chunks
+    }
+
+    fn load_all_chunks(&mut self, pos: Pos) {
+        let index = pos.div(CHUNK_SIZE as i32);
+        self.coord_index = index;
+        for x in 0..RENDER_DISTANCE {
+            for y in 0..RENDER_DISTANCE {
+                for z in 0..RENDER_DISTANCE {
+                    let coords = Pos::new(x as i32, y as i32, z as i32);
+                    let chunk = Chunk::new(coords);
+                    self.load_chunk(chunk);
+                }
+            }
+        }
+    }
+
 }
 
 
@@ -241,37 +368,33 @@ impl Ray {
         Ray {origin, direction: direction.normalize()}
     }
 
-    /*pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
+    pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
         let mut pos = self.origin;
         while pos.manhattan(&self.origin) < (RENDER_DISTANCE * CHUNK_SIZE) as f32 {
-            let chunk = &world.chunks[World::chunk_index(pos.pos())];
-            if let Some(chunk) = chunk {
-                let material = Material::from_id(chunk.get_voxel(pos));
+            let voxel = world.voxel_at(pos.pos());
+            if let Some(voxel) = voxel {
+                let color = Material::from_id(voxel).color;
                 
-                if material.color.a == 0.0 {
-                    pos = pos.add(&self.direction);
-                    continue;
+                if color.a != 0.0 {
+                    if color.a == 1.0 || bounces_left <= 0 {
+                        return color;
+                    }
+                    
+                    let ray = Ray::new(self.origin, self.direction);
+                    let color = ray.trace(world, bounces_left - 1);
+                    
+                    return color.weight_mix(color);
                 }
-                
-                if material.color.a == 1.0 || bounces_left <= 0 {
-                    return material.color;
-                }
-                
-                let ray = Ray::new(pos, self.direction);
-                let color = ray.trace(world, bounces_left - 1);
-                
-                let final_color = material.color.weight_mix(color);
-                return final_color;
             }
-            else {
-                break;
-            }
+            else { break; }
+
+            pos = pos.add(&self.direction);
         }
 
         Materials::Air.get_properties().color
     }
-    */
-
+    
+    /*
     pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
         let step_size_frac = Vec3::new(
             (1.0 / self.direction.x).abs(), 
@@ -339,5 +462,5 @@ impl Ray {
         }
         Materials::Air.get_properties().color
     }
-
+    */
 }

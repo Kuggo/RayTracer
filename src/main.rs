@@ -98,6 +98,7 @@ fn generate_world() ->  Box<World> {
     world.random_gen();
     //let mut c = Chunk::new(Pos::new(0, 0, 0));
     //c.set_voxel(Vec3::new(4.0, 4.0, 4.0), Materials::Stone as MaterialID);
+    //c.random_gen();
     //world.load_chunk(c);
     world
 }
