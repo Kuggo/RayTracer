@@ -174,12 +174,20 @@ pub struct Pos {
 
 impl Pos {
     pub fn new(x: i32, y: i32, z: i32) -> Pos {
-        Pos {x: x, y: y, z: z}
+        Pos {x, y, z}
     }
 
     pub fn vec3(&self) -> Vec3 {
         Vec3 {x: self.x as f32, y: self.y as f32, z: self.z as f32}
-        
     }
+
+    pub fn manhattan(&self, other: &Pos) -> i32 {
+        (self.x - other.x).abs() + (self.y - other.y).abs() + (self.z - other.z).abs()
+    }
+
+    pub fn div(&self, i: i32) -> Pos {
+        Pos::new(self.x / i, self.y / i, self.z / i)
+    }
+    
 
 }

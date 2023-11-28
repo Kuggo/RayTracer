@@ -161,7 +161,7 @@ impl Camera {
         for x in (-(self.screen.width_pix as i32) / 2)..(self.screen.width_pix as i32 / 2) {
             for y in (-(self.screen.height_pix as i32) / 2)..(self.screen.height_pix as i32 / 2) {
                 let v = front_vec.add(&right_vec.scale(x as f32)).add(&up_vec.scale(y as f32));
-                let ray = Ray::new(self.position, v);
+                let ray = Ray::new(self.position.add(&v), v);
                 let color = ray.trace(&self.world, 0);
                 self.screen.draw_pixel(x, y, color);
             }

@@ -215,6 +215,18 @@ impl World {
 
         old
     }
+
+    pub fn voxel_at(&self, pos: Pos) -> Option<MaterialID> {
+        let chunk_coords = Pos::new(pos.x / CHUNK_SIZE as i32, pos.y / CHUNK_SIZE as i32, pos.z / CHUNK_SIZE as i32);
+        let voxel_offset = Pos::new(pos.x % CHUNK_SIZE as i32, pos.y % CHUNK_SIZE as i32, pos.z % CHUNK_SIZE as i32);
+        let chunk = &self.chunks[World::chunk_index(chunk_coords)];
+        if let Some(chunk) = chunk {
+            Some(chunk.get_voxel(voxel_offset.vec3()))
+        }
+        else {
+            None
+        }
+    }
 }
 
 
@@ -226,10 +238,10 @@ pub struct Ray {
 
 impl Ray {
     pub fn new(origin: Vec3, direction: Vec3) -> Ray {
-        Ray {origin, direction}
+        Ray {origin, direction: direction.normalize()}
     }
 
-    pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
+    /*pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
         let mut pos = self.origin;
         while pos.manhattan(&self.origin) < (RENDER_DISTANCE * CHUNK_SIZE) as f32 {
             let chunk = &world.chunks[World::chunk_index(pos.pos())];
@@ -258,4 +270,74 @@ impl Ray {
 
         Materials::Air.get_properties().color
     }
+    */
+
+    pub fn trace(&self, world: &World, bounces_left: u8) -> Color {
+        let step_size_frac = Vec3::new(
+            (1.0 / self.direction.x).abs(), 
+            (1.0 / self.direction.y).abs(), 
+            (1.0 / self.direction.z).abs()
+        );
+        
+        let step_sign = Pos::new(
+            self.direction.x.signum() as i32, 
+            self.direction.y.signum() as i32, 
+            self.direction.z.signum() as i32
+        );
+
+        let mut vox = self.origin.pos();
+        let mut vox_frac: Vec3 = Vec3::new(
+            self.direction.x.signum() * (self.origin.x - (vox.x + (self.direction.x < 0.0) as i32) as f32) * step_size_frac.x,
+            self.direction.x.signum() * (self.origin.y - (vox.y + (self.direction.y < 0.0) as i32) as f32) * step_size_frac.y,
+            self.direction.z.signum() * (self.origin.z - (vox.z + (self.direction.z < 0.0) as i32) as f32) * step_size_frac.z
+        );
+        
+        let mut dist: f32 = 0.0;
+
+        while dist < (RENDER_DISTANCE * CHUNK_SIZE) as f32 {
+            let voxel = world.voxel_at(vox);
+            if let Some(voxel) = voxel {
+                let color = Material::from_id(voxel).color;
+                
+                if color.a != 0.0 {
+                    if color.a == 1.0 || bounces_left <= 0 {
+                        return color;
+                    }
+                    
+                    let ray = Ray::new(vox_frac, self.direction);
+                    let color = ray.trace(world, bounces_left - 1);
+                    
+                    return color.weight_mix(color);
+                }
+            }
+            else { break; }
+
+            if vox_frac.x < vox_frac.y {
+                if vox_frac.x < vox_frac.z {
+                    vox.x += step_sign.x;
+                    dist = vox_frac.x;
+                    vox_frac.x += step_size_frac.x;
+                } 
+                else {
+                    vox.z += step_sign.z;
+                    dist = vox_frac.z;
+                    vox_frac.z += step_size_frac.z;
+                }
+            } 
+            else {
+                if vox_frac.y < vox_frac.z {
+                    vox.y += step_sign.y;
+                    dist = vox_frac.y;
+                    vox_frac.y += step_size_frac.y;
+                } 
+                else {
+                    vox.z += step_sign.z;
+                    dist = vox_frac.z;
+                    vox_frac.z += step_size_frac.z;
+                }
+            }
+        }
+        Materials::Air.get_properties().color
+    }
+
 }
