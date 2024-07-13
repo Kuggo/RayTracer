@@ -6,7 +6,7 @@ use crate::linalg::*;
 
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Color {
     r: f32,
     g: f32,
@@ -62,7 +62,7 @@ pub type MaterialID = u8;
 static MATERIALS: [Material; 256] = Materials::init_pallete();
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Material {
     color: Color,
     //reflectiveness: f32,
@@ -121,12 +121,12 @@ pub struct Octree {
 
 
 const CHUNK_SIZE: usize = 8;
-const RENDER_DISTANCE: usize = 8;
+const RENDER_DISTANCE: usize = 2;
 
 const CHUNK_MASK: usize = RENDER_DISTANCE - 1;
 const VOXEL_MASK: usize = CHUNK_SIZE - 1;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Chunk {
     //tree: Octree,
     coords: Pos,
@@ -170,7 +170,7 @@ impl Chunk {
 }
 
 
-
+#[derive(Debug)]
 pub struct World {
     chunks: [Option<Box<Chunk>>; RENDER_DISTANCE * RENDER_DISTANCE * RENDER_DISTANCE],
     coord_index: Pos,
@@ -249,8 +249,7 @@ impl World {
 
     pub fn update_chunks_in_area(&mut self, pos: Vec3) {
         const RD: i32 = RENDER_DISTANCE as i32;
-
-
+        
         let pos = pos.pos();
         let index = pos.div(CHUNK_SIZE as i32);
         if index == self.coord_index { 
@@ -265,16 +264,14 @@ impl World {
             self.load_all_chunks(pos);
         }
         
-        
         let corner = self.coord_index.sub(&Pos::new(RD/2, RD/2, RD/2));
         
         let range_x = if offset.x >= 0 { 0..offset.x } 
                                 else { (RD + offset.x)..RD };
-                                
         for x in range_x {
             for y in 0..RENDER_DISTANCE {
                 for z in 0..RENDER_DISTANCE {
-                    let coords = Pos::new(x, y as i32, z as i32).add(&corner);
+                    let coords = Pos::new(x, y as i32, z as i32).sub(&corner);
                     let new = self.fetch_unloaded_chunk(coords);
                     let old = self.load_chunk(new);
                     if let Some(old) = old {
@@ -285,14 +282,14 @@ impl World {
         }
 
         let range_y = if offset.y >= 0 { 0..offset.y } 
-                                else { offset.y..RD };
+                                else { (RD + offset.y)..RD };
         for y in range_y {
             let range_x = if offset.x >= 0 { offset.x..RD } // feels like backwards but its correct
                                     else { 0..(RD + offset.x) };
             
             for x in range_x {
                 for z in 0..RENDER_DISTANCE {
-                    let coords = Pos::new(x, y, z as i32).add(&corner);
+                    let coords = Pos::new(x, y, z as i32).sub(&corner);
                     let c = self.unload_chunk(coords);
                     if let Some(c) = c {
                         unloaded_chunks.push(c);
@@ -302,7 +299,7 @@ impl World {
         }
 
         let range_z = if offset.z >= 0 { 0..offset.z } 
-                                else { offset.z..RD };
+                                else { (RD + offset.z)..RD };
         for z in range_z {
             let range_x = if offset.x >= 0 { offset.x..RD }
                                     else { 0..(RD + offset.x) };
@@ -311,8 +308,7 @@ impl World {
                 let range_y = if offset.y >= 0 { offset.y..RD }
                                         else { 0..(RD + offset.y) };
                 for y in range_y {
-                    let coords = Pos::new(x, y, z).add(&corner);
-
+                    let coords = Pos::new(x, y, z).sub(&corner);
                     let c = self.unload_chunk(coords);
                     if let Some(c) = c {
                         unloaded_chunks.push(c);
@@ -321,7 +317,11 @@ impl World {
             }
         }
 
-        self.coord_index = index;
+        for c in unloaded_chunks {
+            println!("{:?}\n", c.coords);
+        }
+        
+        self.coord_index = index;    
     }
 
     fn unload_all_chunks(&mut self) -> Vec<Box<Chunk>> {

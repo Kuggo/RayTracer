@@ -195,8 +195,8 @@ fn main() -> Result<(), String> {
     const SCREEN_WIDTH_PIX: u32 = 320;
     const SCREEN_HEIGHT_PIX: u32 = 180;
     const PIXELS_PER_UNIT: u32 = 100;
-    const PIXEL_SIZE: u8 = 4;
-    let fps: f32 = 30.0;
+    const PIXEL_SIZE: u8 = 2;
+    let fps: f32 = 3.0;
 
     let camera_pos = Vec3::new(0.0, 0.0, 0.0);
     let camera_dir = Vec3::new(0.0, 0.0, 1.0);

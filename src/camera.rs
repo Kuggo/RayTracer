@@ -148,7 +148,9 @@ impl Camera {
 
         self.position = self.position.add(&mov_dir);
 
-        self.world.update_chunks_in_area(self.position);
+        if mov_dir.x != 0.0 || mov_dir.y != 0.0 || mov_dir.z != 0.0 {
+            self.world.update_chunks_in_area(self.position);
+        }
     }
 
     pub fn world_to_camera(&self, p: Vec3) -> Vec3 {
